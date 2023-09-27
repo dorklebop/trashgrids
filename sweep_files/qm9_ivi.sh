@@ -5,8 +5,9 @@
 #SBATCH --time=120:00:00
 
 #SBATCH --output=/home/pvdlind1/gridifier/slurm-%j.out
-cd /home/pvdlind1/gridifier/
+cd /home/pvdlind1/trashgrids/
 
+source /opt/rh/devtoolset-10/enable
 source activate gridifier
 
 python -m wandb agent ck-experimental/gridifier2/djworgsn
