@@ -1,0 +1,73 @@
+method: grid
+metric:
+  goal: minimize
+  name: 'val/mae'
+name: qm9_alpha_sweep
+parameters:
+  cfg:
+    value: cfg/qm9_cfg.py
+  cfg.gridifier.grid_resolution:
+    values:
+      - 9
+      - 7
+  cfg.gridifier.num_neighbors:
+    values:
+      - 9
+      - 7
+  cfg.gridifier.message_net.num_layers:
+    value: 1
+  cfg.gridifier.message_net.type:
+    values:
+      - "MLP"
+      - ""
+  cfg.gridifier.message_net.num_hidden:
+    values:
+      - 128
+  cfg.gridifier.node_embedding.num_layers:
+    value: 1
+  cfg.gridifier.node_embedding.type:
+    values:
+      - "MLP"
+      - ""
+  cfg.gridifier.node_embedding.num_hidden:
+    values:
+      - 128
+  cfg.gridifier.update_net.num_layers:
+    value: 1
+  cfg.gridifier.update_net.type:
+    values:
+      - "MLP"
+      - ""
+  cfg.gridifier.update_net.num_hidden:
+    values:
+      - 128
+  cfg.gridifier.position_embed.num_layers:
+    value: 1
+  cfg.gridifier.position_embed.num_hidden:
+    values:
+      - 128
+  cfg.gridifier.position_embed.omega_0:
+    values:
+      - 0.1
+      - 1.0
+  cfg.net.norm:
+    value: "Identity"
+  cfg.net.num_hidden:
+    values:
+      - 128
+      - 64
+  cfg.net.num_blocks:
+    value: 6
+  cfg.net.pooling_layers:
+    value: "(-1,)"
+  cfg.train.epochs:
+    value: 150
+  cfg.gridifier.aggregation:
+    value: "mean"
+  cfg.dataset.augment:
+    value: True
+  cfg.optimizer.weight_decay:
+    value: 0
+  cfg.gridifier.conditioning:
+    value: "distance"
+program: main.py
