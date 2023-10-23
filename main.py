@@ -100,7 +100,6 @@ def main(_):
             checkpoint_path, network=model.network, cfg=cfg
         )
 
-
     # GPU-WARM-UP
     if cfg.track_inference_time:
         dummy_input = next(iter(datamodule.train_dataloader())).to(cfg.device)
@@ -111,15 +110,13 @@ def main(_):
         for it in range(10):
             _ = model.network(dummy_input)
 
-
-
     # Test before training
     if cfg.test.before_train:
         trainer.validate(model, datamodule=datamodule)
         trainer.test(model, datamodule=datamodule)
 
     # Train
-    if cfg.train.do:
+    if cfg.train.do and cfg.train.epochs > 0:
         if cfg.pretrained.load:
             # From preloaded point
             trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint_path)

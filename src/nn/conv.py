@@ -2,6 +2,7 @@
 
 from typing import List, Optional, Tuple, TypeVar, Union
 from src.nn.isotropicconv3d import IsotropicConv3d as src_nn_IsotropicConv3d
+# from src.nn.isotropicckconv3d import IsotropicCKConv3d as src_nn_IsotropicCKConv3d
 import torch
 
 T = TypeVar("T")
@@ -106,6 +107,11 @@ class Conv3d(torch.nn.Conv3d):
             dtype=dtype,
         )
 
+    def forward(self, input):
+        return self._conv_forward(input, self.weight, self.bias)
+
+
+
 
 class IsotropicConv3d(src_nn_IsotropicConv3d):
     def __init__(
@@ -136,3 +142,4 @@ class IsotropicConv3d(src_nn_IsotropicConv3d):
             device=device,
             dtype=dtype,
         )
+

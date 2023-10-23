@@ -49,6 +49,8 @@ def get_config():
     cfg.gridifier.reuse_edges = True
     cfg.gridifier.same_k_forward_backward = True
 
+#     cfg.conv.type = "gconv"
+
     # net
     cfg.net.dropout = 0
     cfg.net.nonlinearity = "GELU"
@@ -57,12 +59,14 @@ def get_config():
     cfg.net.norm = "Identity"
     cfg.net.num_blocks = 3
     cfg.net.num_hidden = 256
-    cfg.net.block.type = "CK"
-    cfg.net.kernel.size = 5
-    cfg.net.kernel.type = ""
-    cfg.net.kernel.isotropic = True
-
     cfg.num_workers = 1
+
+#     cfg.conv.out_dim = 64
+    cfg.conv.blocktype = "ConvNeXt"
+    cfg.conv.kernel.size = 5
+    cfg.conv.type = "Conv3d"
+    cfg.conv.bottleneck_factor = 1
+    cfg.conv.layer_scale_init_value = 1e-6
 
     cfg.optimizer.lr = 0.0005
     cfg.optimizer.type = "AdamW"

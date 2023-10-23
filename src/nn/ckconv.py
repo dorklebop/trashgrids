@@ -68,4 +68,25 @@ class CKConv(torch.nn.Module):
         kernel = self.kernel_generator(self.grid).permute(3, 0, 1, 2).unsqueeze(1)
         # Convolve
         out = self.conv_fn(input=x, weight=kernel, bias=None, padding="same", groups=self.groups)
+
         return out
+
+class CKConv3d(CKConv):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        data_dim: int,
+        kernel_cfg: config_dict.ConfigDict,
+        kernel_size: int,
+        groups: int,
+        **kwargs,
+    ):
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            data_dim=3,
+            kernel_cfg=kernel_cfg,
+            kernel_size=kernel_size,
+            groups=groups,
+            **kwargs)

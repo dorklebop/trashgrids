@@ -1,0 +1,49 @@
+method: grid
+metric:
+  goal: minimize
+  name: 'val/best_mae'
+name: qm9
+project: gridifier2
+parameters:
+  cfg:
+    value: cfg/qm9_best.py
+  cfg.gridifier.circular_grid:
+    values:
+      - true
+  cfg.net.block.type:
+    values:
+      - "CK"
+  cfg.net.kernel.isotropic:
+    values:
+      - true
+  cfg.net.kernel.type:
+    values:
+      - "RBF"
+  cfg.gridifier.grid_resolution:
+    values:
+      - 9
+      - 11
+  cfg.net.kernel.size:
+    values:
+      - 5
+      - 7
+      - 9
+  cfg.gridifier.num_neighbors:
+    values:
+      - 9
+      - 3
+      - 16
+  cfg.gridifier.position_embed.omega_0:
+    values:
+      - 1.0
+      - 10.0
+      - 0.1
+  cfg.optimizer.weight_decay:
+    values:
+      - 0.0
+      - 0.0001
+  cfg.net.dropout:
+    values:
+      - 0.0
+      - 0.1
+program: main.py

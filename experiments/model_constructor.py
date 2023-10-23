@@ -18,12 +18,12 @@ def construct_model(
 
     # Get type of model from task type
     if cfg.net.type == "PointCloudResNet":
-        if cfg.task == "classification":
-            net_type = "PointCloudResNet"
-        elif cfg.dataset.name == "QM9" or cfg.dataset.name == "MD17":
-            net_type = "EquivariantPointCloudResNet"
-        elif cfg.task == "segmentation":
+#         if cfg.task == "classification":
+#             net_type = "PointCloudResNet"
+        if cfg.task == "segmentation":
             net_type = "PointCloudSegmentationResNet"
+        else:
+            net_type = "PointCloudResNet"
     elif cfg.net.type == "MPNN":
         net_type = "MPNN"
     elif cfg.net.type == "PointNet++":

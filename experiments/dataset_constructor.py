@@ -30,6 +30,7 @@ def construct_datamodule(cfg: config_dict.ConfigDict) -> pl.LightningDataModule:
         test_batch_size=cfg.test.batch_size_multiplier * cfg.train.batch_size,
         num_workers=cfg.num_workers,
         pin_memory=pin_memory,
+        limit_samples=cfg.limit_samples,
         **cfg.dataset.params,
     )
 

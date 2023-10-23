@@ -32,6 +32,13 @@ def construct_trainer(
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
 
+    if cfg.dataset.name == "QM9":
+        monitor = "val/mae"
+
+    if cfg.dataset.name == "MD17":
+
+        monitor = "Energy valid MAE"
+
     # Callback for model checkpointing:
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         monitor=monitor,

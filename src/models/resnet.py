@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch_geometric as tg
 import torch_geometric.nn as tg_nn
 from ml_collections import config_dict
+import matplotlib.pyplot as plt
 
 from src import nn as src_nn
 from src import utils as src_utils
@@ -13,7 +14,6 @@ from src.models import modules
 
 import wandb
 
-import gconv.gnn as gnn
 
 class PointCloudResNet(nn.Module):
     def __init__(
@@ -30,27 +30,31 @@ class PointCloudResNet(nn.Module):
             domain=domain
         )
 
-        self.pool = cfg.net.readout_pool
+        if cfg.net.readout_pool == "mean":
+            self.pool = lambda x : torch.nn.functional.adaptive_avg_pool3d(x, 1).squeeze()
+        elif cfg.net.readout_pool == "add":
+            self.pool = lambda x : torch.sum(x, dim=(2,3,4)).squeeze()
+        else:
+            self.pool = nn.Identity()
 
         if cfg.net.readout_head:
             self.head = nn.Linear(in_features=self.grid_representation.output_channels, out_features=out_channels)
+#             self.head = nn.Sequential(nn.Linear(in_features=self.grid_representation.output_channels, out_features=cfg.net.num_hidden),
+#                                       nn.SiLU(),
+#                                       nn.Linear(in_features=cfg.net.num_hidden, out_features=out_channels))
+
         else:
             self.head = nn.Identity()
 
-  
 
-    def forward(self, data):
-        out, out_pos, batch, _ = self.grid_representation(data)
 
-        out = torch.nn.functional.adaptive_avg_pool3d(out, 1)
-
-        batch_size = batch.max() + 1
-
-        out = out.reshape(batch_size, -1)
-        
+    def forward(self, data, logger=None):
+        out, out_pos, batch, _ = self.grid_representation(data, logger=logger)
+        out = self.pool(out)
         out = self.head(out)
 
         return out
+
 
 
 class PointCloudSegmentationResNet(nn.Module):
@@ -155,63 +159,6 @@ class PointCloudSegmentationResNet(nn.Module):
 
         return out
 
-class EquivariantPointCloudResNet(nn.Module):
-    def __init__(
-        self,
-        cfg: config_dict.ConfigDict,
-        in_channels: int,
-        out_channels: int,
-        domain=[-1.0, 1.0]
-    ):
-        super().__init__()
-
-        self.grid_representation = Gridifier(
-            cfg=cfg, in_channels=in_channels, out_channels=out_channels,
-            domain=domain
-        )
-
-        if cfg.net.readout_pool == "mean":
-            self.pool = lambda x : torch.nn.functional.adaptive_avg_pool3d(x, 1).squeeze()
-        elif cfg.net.readout_pool == "add":
-            self.pool = lambda x : torch.sum(x, dim=(2,3,4)).squeeze()
-        else:
-            self.pool = nn.Identity()
-
-        if cfg.net.readout_head:
-#             self.head = nn.Linear(in_features=self.grid_representation.output_channels, out_features=out_channels)
-            self.head = nn.Sequential(nn.Linear(in_features=self.grid_representation.output_channels, out_features=cfg.net.num_hidden),
-                                      nn.SiLU(),
-                                      nn.Linear(in_features=cfg.net.num_hidden, out_features=out_channels))
-
-        else:
-            self.head = nn.Identity()
-
-        self.conv_output_size = self.grid_representation.convnet.grid_out_resolution ** 3
-
-        self.flatten_output = cfg.net.flatten_output
-        if self.flatten_output:
-            conv_output_channels = self.grid_representation.output_channels
-#             self.out_shape = lambda x: x.reshape(-1, self.conv_output_size * conv_output_channels)
-            self.out_shape = lambda x: x.flatten(1, -1)
-            self.head = nn.Sequential(nn.Linear(in_features=self.conv_output_size * conv_output_channels, out_features=cfg.net.num_hidden),
-                                    nn.SiLU(),
-                                    nn.Linear(in_features=cfg.net.num_hidden, out_features=out_channels))
-
-        else:
-            self.out_shape = nn.Identity()
-
-
-
-    def forward(self, data, logger=None):
-        out, out_pos, batch, _ = self.grid_representation(data, logger=logger)
-        out = self.pool(out)
-        out = self.out_shape(out)
-        out = self.head(out)
-
-
-        return out
-
-
 
 class Gridifier(nn.Module):
     def __init__(
@@ -255,21 +202,35 @@ class Gridifier(nn.Module):
         self.node_embedding = nn.Identity()
 
         if embed_nodes:
-            self.node_embedding = nn.Embedding(10, self.num_hidden)
+            self.node_embedding = nn.Embedding(in_channels, self.num_hidden)
             in_channels = self.num_hidden
-
 
         # Create grid
         self.domain = domain
         self.dimensions = 3  # TODO(dwromero): cfg.net.data_dim
-        grid = src_utils.create_coordinate_grid(
-            size=self.grid_resolution,
-            domain=self.domain,
-            dimensions=self.dimensions,
-            as_list=True,
-        )
-        self.register_buffer("grid", grid)
 
+        self.circular_grid = cfg.gridifier.circular_grid
+        if self.circular_grid:
+            grid, circle_idx, _ = src_utils.create_circular_coordinate_grid(
+                                                                               size=self.grid_resolution,
+                                                                               domain=self.domain,
+                                                                               dimensions=self.dimensions,
+                                                                               radius=self.domain[1]
+                                                                              )
+
+
+            self.register_buffer("grid", grid)
+            self.register_buffer("circle_idx", circle_idx.squeeze())
+
+        else:
+            grid = src_utils.create_coordinate_grid(
+                size=self.grid_resolution,
+                domain=self.domain,
+                dimensions=self.dimensions,
+                as_list=True,
+            )
+            self.register_buffer("grid", grid)
+        self.grid_size = self.grid_resolution**self.dimensions
 
         self.to_dense_rep = src_nn.BipartiteConv(
             data_dim=self.dimensions,
@@ -287,10 +248,7 @@ class Gridifier(nn.Module):
         )
 
 
-        if cfg.conv.type == "gconv":
-            self.convnet = GConvNet3D(cfg)
-        else:
-            self.convnet = ConvNet3D(cfg)
+        self.convnet = ConvNet3D(cfg)
         self.output_channels = self.convnet.output_channels
 
 
@@ -301,13 +259,24 @@ class Gridifier(nn.Module):
 
         batch_size = getattr(data, "num_graphs", 1)
 
-        # target grid and target batch
-        batch_y = (
-            torch.tensor(list(range(batch_size)), device=pos.device, dtype=torch.long)
-            .repeat_interleave(self.grid_resolution**self.dimensions)
-            .view(-1)
-        )
-        target_pos = self.grid.repeat((batch_size, 1)).to(pos.device)
+        if self.circular_grid:
+            # target grid and target batch
+            batch_y = (
+                torch.tensor(list(range(batch_size)), device=pos.device, dtype=torch.long)
+                .repeat_interleave(self.circle_idx.shape[0])
+                .view(-1)
+            )
+            circle_indices = (torch.ones(self.circle_idx.shape[0] * batch_size, device=self.grid.device) * self.grid_size) * batch_y + self.circle_idx.tile(batch_size)
+
+            target_pos = self.grid[self.circle_idx].repeat((batch_size, 1)).to(pos.device)
+        else:
+            # target grid and target batch
+            batch_y = (
+                torch.tensor(list(range(batch_size)), device=pos.device, dtype=torch.long)
+                .repeat_interleave(self.grid_size)
+                .view(-1)
+            )
+            target_pos = self.grid.repeat((batch_size, 1)).to(pos.device)
 
         # Build knn connectivity from grid to pointcloud
         forward_edges = tg_nn.knn(
@@ -337,6 +306,12 @@ class Gridifier(nn.Module):
             batch_y=batch_y,
         )
 
+
+        if self.circular_grid:
+            rep = torch.zeros(self.grid.shape[0] * batch_size, self.num_hidden, device=self.grid.device)
+            rep[circle_indices.long()] = out
+            out = rep
+
         out = (
             out.reshape(
                 batch_size,
@@ -345,7 +320,8 @@ class Gridifier(nn.Module):
                 self.grid_resolution,
                 self.num_hidden,
             )
-            .permute(0, 4, 1, 2, 3)
+            .permute(0, 4, 3, 2, 1) #convert from xyz to dhw format
+#             .permute(0, 4, 1, 2, 3)
             .to(memory_format=torch.contiguous_format)
         )
 
@@ -359,10 +335,8 @@ class Gridifier(nn.Module):
         return out, out_pos, batch, neighbor_edges
 
     def plot_grid(self, grid_rep, logger):
-        import torchvision
-        import matplotlib.pyplot as plt
 
-        def tile_images(images):
+        def tile_images(images, minn, maxx):
             """
             Tile and display images next to each other using Matplotlib.
 
@@ -380,8 +354,7 @@ class Gridifier(nn.Module):
             fig, axs = plt.subplots(1, n, figsize=(12, 4))  # You can adjust the figsize as needed
 
             for i, image_array in enumerate(images):
-                minn = image_array.min()
-                maxx = image_array.max()
+
                 normed_img = (image_array - minn) / (maxx - minn)
                 axs[i].imshow(normed_img)
                 axs[i].axis('off')
@@ -393,13 +366,16 @@ class Gridifier(nn.Module):
 
         grid_rep = grid_rep[0, :3, :, :, :].detach().cpu().numpy()
 
+        minn = grid_rep.min()
+        maxx = grid_rep.max()
+
         d_slice = grid_rep.shape[1]
         ims = []
         for d in range(d_slice):
-            imslice = grid_rep[:, d, :, :].transpose(1, 2, 0)
+            imslice = grid_rep[:, :, d, :].transpose(1, 2, 0)
             ims.append(imslice)
 
-        tile_images(ims)
+        tile_images(ims, minn=minn, maxx=maxx)
 
 class ConvNet3D(nn.Module):
     def __init__(
@@ -407,10 +383,13 @@ class ConvNet3D(nn.Module):
         cfg: config_dict.ConfigDict
     ):
         super().__init__()
-        conv_class = getattr(src_nn, cfg.conv.type)
-        if conv_class == src_nn.CKConv:
+
+
+        conv_type = f"{'Isotropic' if cfg.net.kernel.isotropic else ''}Conv3d"
+        conv_class = getattr(src_nn, conv_type)
+        if conv_class == src_nn.CKConv3d or conv_class == src_nn.IsotropicConv3d:
             # Add data_dim and the kernel_config via a partial call
-            conv_class = partial(conv_class, data_dim=3, kernel_cfg=cfg.conv.kernel)
+            conv_class = partial(conv_class, data_dim=3, kernel_cfg=cfg.net.kernel)
 
         if cfg.net.norm == "BatchNorm":
             norm_type = f"{cfg.net.norm}3d"
@@ -424,7 +403,7 @@ class ConvNet3D(nn.Module):
         self.num_hidden = cfg.net.num_hidden
         self.num_blocks = cfg.net.num_blocks
         self.grid_resolution = cfg.gridifier.grid_resolution
-        self.kernel_size = cfg.conv.kernel.size
+        self.kernel_size = cfg.net.kernel.size
 
         pooling_lyrs = list(map(lambda x: x - 1, cfg.net.pooling_layers))
         block_width_factors = cfg.net.width_factors
@@ -448,6 +427,11 @@ class ConvNet3D(nn.Module):
         layers = []
         input_channels = output_channels = self.num_hidden
         kernel_size = self.kernel_size
+
+        assert cfg.net.block.type in ["CK", "ConvNeXt"], f"Block type '{cfg.net.block.type}' not recognized. choose ['CK', 'ConvNeXt']"
+
+        block = getattr(modules, f"{cfg.net.block.type}Block3D")
+
         if self.num_blocks > 0:
             for i in range(self.num_blocks):
 
@@ -461,7 +445,7 @@ class ConvNet3D(nn.Module):
                     input_channels = int(self.num_hidden * width_factors[i - 1])
                     output_channels = int(self.num_hidden * width_factors[i])
                 layers.append(
-                    modules.CKBlock3D(
+                    block(
                         in_channels=input_channels,
                         out_channels=output_channels,
                         kernel_size=self.kernel_size,
@@ -470,6 +454,7 @@ class ConvNet3D(nn.Module):
                         conv_class=conv_class,
                         dropout_class=dropout_class,
                         nonlinear_class=nonlinear_class,
+                        cfg=cfg
                     )
                 )
                 if i in pooling_lyrs:
@@ -491,163 +476,4 @@ class ConvNet3D(nn.Module):
         x = self.out_norm(x)
         return x
 
-
-class GConvNet3D(nn.Module):
-    def __init__(
-        self,
-        cfg: config_dict.ConfigDict
-    ):
-        super().__init__()
-
-        if cfg.net.norm == "BatchNorm":
-            norm_type = f"{cfg.net.norm}3d"
-        else:
-            norm_type = cfg.net.norm
-        norm_class = getattr(nn, norm_type)
-        nonlinear_class = getattr(nn, cfg.net.nonlinearity)
-        dropout_class = getattr(nn, cfg.net.dropout_type)
-
-        self.drop_rate = cfg.net.dropout
-        self.num_hidden = cfg.net.num_hidden
-        self.num_blocks = cfg.net.num_blocks
-        self.grid_resolution = cfg.gridifier.grid_resolution
-        self.kernel_size = cfg.conv.kernel.size
-        self.group_kernel_size = cfg.gconv.group_kernel_size
-
-        self.grid_out_resolution = self.grid_resolution
-
-        layers = []
-        input_channels = output_channels = self.num_hidden
-
-        # the lifting layer is required to lift R3 input to the group
-        self.lifting_layer = gnn.GLiftingConvSE3(in_channels=self.num_hidden,
-                                                 out_channels=self.num_hidden,
-                                                 kernel_size=self.kernel_size,
-                                                 group_kernel_size=self.group_kernel_size,
-                                                 padding="same")
-        input_channels = self.num_hidden
-        output_channels = self.num_hidden
-
-        if self.num_blocks > 0:
-            for i in range(self.num_blocks):
-
-                # HACKS
-                if i == (self.num_blocks - 1):
-                    output_channels = cfg.conv.out_dim
-                # HACKS
-
-                layers.append(
-                    modules.GResNetBlock(in_channels=input_channels,
-                                         out_channels=output_channels,
-                                         padding="same",
-                                         kernel_size=self.kernel_size,
-                                         group_kernel_size=self.group_kernel_size
-
-                    )
-                )
-
-                if i in pooling_lyrs:
-                    layers.append(gnn.GMaxSpatialPool3d(kernel_size=2, stride=2))
-                    self.grid_out_resolution = self.grid_out_resolution // 2
-        else:
-            output_channels = self.num_hidden
-
-        self.gpool = gnn.GAvgGroupPool()
-
-        self.layers = nn.ModuleList(layers)
-        self.output_channels = output_channels
-
-        self.out_norm = norm_class(output_channels)
-
-
-    def forward(self, x):
-        x, H = self.lifting_layer(x)
-
-        for module in self.layers:
-            x, H = module(x, H)
-
-        # pool over group dim
-        x = self.gpool(x, H)
-
-        x = self.out_norm(x)
-
-        return x
-
-# class GConvNet3D(nn.Module):
-#     def __init__(
-#         self,
-#         cfg: config_dict.ConfigDict
-#     ):
-#         super().__init__()
-#
-#         if cfg.net.norm == "BatchNorm":
-#             norm_type = f"{cfg.net.norm}3d"
-#         else:
-#             norm_type = cfg.net.norm
-#         norm_class = getattr(nn, norm_type)
-#         nonlinear_class = getattr(nn, cfg.net.nonlinearity)
-#         dropout_class = getattr(nn, cfg.net.dropout_type)
-#
-#         self.drop_rate = cfg.net.dropout
-#         self.num_hidden = cfg.net.num_hidden
-#         self.num_blocks = cfg.net.num_blocks
-#         self.grid_resolution = cfg.gridifier.grid_resolution
-#         self.kernel_size = cfg.conv.kernel.size
-#         self.group_kernel_size = cfg.gconv.group_kernel_size
-#
-#         self.grid_out_resolution = self.grid_resolution
-#
-#         layers = []
-#         input_channels = output_channels = self.num_hidden
-#
-#         # the lifting layer is required to lift R3 input to the group
-#         self.lifting_layer = gnn.GLiftingConvSE3(in_channels=self.num_hidden,
-#                                                  out_channels=self.num_hidden,
-#                                                  kernel_size=self.kernel_size,
-#                                                  group_kernel_size=self.group_kernel_size,
-#                                                  padding="same")
-#         input_channels = self.num_hidden
-#         output_channels = self.num_hidden
-#
-#         if self.num_blocks > 0:
-#             for i in range(self.num_blocks):
-#
-#                 # HACKS
-#                 if i == (self.num_blocks - 1):
-#                     output_channels = cfg.conv.out_dim
-#                 # HACKS
-#
-#                 layers.append(
-#                     gnn.GSeparableConvSE3(in_channels=input_channels,
-#                                           out_channels=output_channels,
-#                                           padding="same",
-#                                           group_kernel_size=self.group_kernel_size,
-#                                           kernel_size=self.kernel_size)
-#                 )
-#
-# #                 if i in pooling_lyrs:
-# #                     layers.append(nn.MaxPool3d(kernel_size=2, stride=2))
-# #                     self.grid_out_resolution = self.grid_out_resolution // 2
-#         else:
-#             output_channels = self.num_hidden
-#
-#         self.gpool = gnn.GAvgGroupPool()
-#
-#         self.layers = nn.ModuleList(layers)
-#         self.output_channels = output_channels
-#
-#         # self.out_norm = norm_class(output_channels)
-#
-#
-#     def forward(self, x):
-#         x, H = self.lifting_layer(x)
-#
-#         for module in self.layers:
-#             x, H = module(x, H)
-#             x = torch.nn.functional.gelu(x)
-#         # pool over group dim
-#         x = self.gpool(x, H)
-#
-#         # x = self.out_norm(x)
-#         return x
 

@@ -39,37 +39,22 @@ class MD17DataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
 
-        self.min_pos = -4.35626745223999
-#         self.max_pos = 4.159473896026611
-        self.max_pos = 4.35626745223999
+#         self.min_pos = -4.718296527862549
+#         self.max_pos = 4.718296527862549
+
+        self.min_pos = -5
+        self.max_pos = 5
 
         self.data_dim = 3
-        self.input_channels = 1
+        self.input_channels = 10
         self.output_channels = self.num_classes
 
-        self.normalization = cfg.params.normalization
-
-#
-#         # Create transforms
-#         transform = [
-#             tg_transforms.NormalizeScale(),
-#             tg_transforms.Center()
-#         ]
-
-        transform = [
-#             tg.transforms.RadiusGraph(radius),
-#                     tg_transforms.NormalizeScale(),
-                    tg_transforms.Center(),
-                    ztox(),
-#                     tg_transforms.RadiusGraph(4.0),
-                    Kcal2meV()]
+        transform = [tg_transforms.Center(),
+                     ztox(),
+                     Kcal2meV()]
 
         if cfg.md17.add_edges:
             transform += [tg_transforms.RadiusGraph(4.0)]
-
-
-        if self.normalization == "samplewise":
-            transform = [tg_transforms.NormalizeScale(), tg_transforms.Center()] + transform
 
         self.augment = cfg.augment
         if self.augment:
@@ -99,18 +84,7 @@ class MD17DataModule(pl.LightningDataModule):
             name="aspirin CCSD",
             train=False,
             pre_transform=self.pre_transform)
-#         tg_datasets.ModelNet(
-#             root=self.data_dir,
-#             name=str(self.num_classes),
-#             pre_transform=self.pre_transform,
-#             train=True,
-#         )
-#         tg_datasets.ModelNet(
-#             root=self.data_dir,
-#             name=str(self.num_classes),
-#             pre_transform=self.pre_transform,
-#             train=False,
-#         )
+
 
     def setup(self, stage=None):
         # Assign train/val datasets for use in dataloaders
@@ -168,16 +142,6 @@ class MD17DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
         )
-
-    def on_before_batch_transfer(self, data, dataloader_idx):
-
-#         data.x = data.z
-
-        if self.normalization == "datasetwise":
-            data.pos = -1.0 + ((data.pos - self.min_pos) * 2) / (self.max_pos - self.min_pos)
-
-        return data
-
 
 
 

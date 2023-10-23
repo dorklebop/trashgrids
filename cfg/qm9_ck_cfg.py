@@ -13,6 +13,7 @@ def get_config():
     cfg.dataset.name = "QM9"
     cfg.dataset.params.num_classes = 1
     cfg.dataset.params.use_positions = False
+    cfg.dataset.qm9.use_cormorant = True
 
     cfg.wandb.entity = "ck-experimental"
     cfg.wandb.project = "dense_point_clouds"
@@ -27,27 +28,30 @@ def get_config():
 
     cfg.gridifier.num_neighbors = 9
     # no message net
-    cfg.gridifier.message_net.type = ""
+    cfg.gridifier.message_net.type = "MLP"
     cfg.gridifier.message_net.num_hidden = 128
     cfg.gridifier.message_net.num_layers = 1
 
 
     cfg.gridifier.node_embedding.nonlinearity = "GELU"
-    cfg.gridifier.node_embedding.num_hidden = 128
-    cfg.gridifier.node_embedding.num_layers = 1
+    cfg.gridifier.node_embedding.num_hidden = 256
+    cfg.gridifier.node_embedding.num_layers = 2
     cfg.gridifier.node_embedding.type = "MLP"
 
     cfg.gridifier.position_embed.nonlinearity = "GELU"
     cfg.gridifier.position_embed.num_hidden = 128
-    cfg.gridifier.position_embed.num_layers = 1
-    cfg.gridifier.position_embed.omega_0 = 0.1
+    cfg.gridifier.position_embed.num_layers = 2
+    cfg.gridifier.position_embed.omega_0 = 1.0
     cfg.gridifier.position_embed.type = "RFNet"
     cfg.gridifier.update_net.nonlinearity = "GELU"
-    cfg.gridifier.update_net.num_hidden = 64
-    cfg.gridifier.update_net.num_layers = 1
+    cfg.gridifier.update_net.num_hidden = 256
+    cfg.gridifier.update_net.num_layers = 2
     cfg.gridifier.update_net.type = "MLP"
     cfg.gridifier.reuse_edges = True
     cfg.gridifier.same_k_forward_backward = True
+
+    cfg.gconv.group_kernel_size = 10
+#     cfg.conv.type = "gconv"
 
     # net
     cfg.net.dropout = 0
@@ -55,14 +59,21 @@ def get_config():
     cfg.net.readout_pool = "mean"
     cfg.net.readout_head = True
     cfg.net.norm = "Identity"
-    cfg.net.num_blocks = 3
+    cfg.net.num_blocks = 10
     cfg.net.num_hidden = 256
-    cfg.net.block.type = "CK"
-    cfg.net.kernel.size = 5
-    cfg.net.kernel.type = ""
-    cfg.net.kernel.isotropic = True
-
     cfg.num_workers = 1
+
+    cfg.conv.kernel.size = 5
+    cfg.conv.type = "CKConv3d"
+    cfg.conv.isotropic = True
+    cfg.conv.kernel.type = "RFNet"
+    cfg.conv.kernel.num_hidden = 32
+    cfg.conv.kernel.num_layers = 2
+    cfg.conv.kernel.omega_0 = 1.0
+    cfg.conv.kernel.input_scale = 0.0
+    cfg.conv.kernel.use_bias = True
+    cfg.conv.kernel.norm = "Identity"
+    cfg.conv.kernel.nonlinearity = "GELU"
 
     cfg.optimizer.lr = 0.0005
     cfg.optimizer.type = "AdamW"

@@ -17,8 +17,9 @@ import numpy as np
 import torch.nn.functional as F
 import torchvision
 from mpl_toolkits import mplot3d
-
+from .utils import get_rotation_matrices, rotation_invariance_plot, plot_grid
 import matplotlib.pyplot as plt
+
 
 
 class LightningWrapperBase(pl.LightningModule):
@@ -664,8 +665,9 @@ class QM9Wrapper(LightningWrapperBase):
         visualize = False
         if batch_idx == 0:
 #             self.equivariance_loss(batch[0])
-            out, out_pos, _, _ = self.network.grid_representation(batch)
-#             self.plot_grid(out)
+            self.invariance_test(batch[0])
+            out, out_pos, _, _ = self.network.grid_representation(batch[0])
+            plot_grid(out, self.logger.experiment)
             visualize = True
 #         out, pos, _, _ = self.network.grid_representation(batch)
 
@@ -738,242 +740,20 @@ class QM9Wrapper(LightningWrapperBase):
                 }
             )
 
-
-    def equivariance_loss(self, graph):
-
-
-        angle = np.random.uniform(0, 2*np.pi, 3)
-        def get_rotation_matrices(angle_x, angle_y, angle_z, device):
-            R_z = torch.tensor([[1.0, 0.0, 0.0],
-                            [0.0, np.cos(angle_z), -np.sin(angle_z)],
-                            [0.0, np.sin(angle_z),  np.cos(angle_z)]], dtype=torch.float32, device=graph.pos.device)
-
-            R_y = torch.tensor([[np.cos(angle_y), 0.0, np.sin(angle_y)],
-                                [0.0, 1.0, 0.0],
-                                [-np.sin(angle_y), 0.0, np.cos(angle_y)]], dtype=torch.float32, device=graph.pos.device)
-
-            R_x = torch.tensor([[np.cos(angle_x), -np.sin(angle_x), 0.0],
-                                [np.sin(angle_x),  np.cos(angle_x), 0.0],
-                                [0.0, 0.0, 1.0]], dtype=torch.float32, device=graph.pos.device)
-
-            return R_x, R_y, R_z
-
-        angle = 0.5 * np.pi
-        R_x, R_y, R_z = get_rotation_matrices(-angle, 0, 0, graph.pos.device)
-
-        rot_pos = graph.pos @ R_x @ R_y @ R_z
+    def invariance_test(self, graph):
 
 
-        graph_rot = graph.clone()
+        angles = list(np.linspace(0, 2*np.pi, 200))
+        losses, angles = rotation_invariance_plot(angles, graph, self.network.grid_representation)
 
+        print(losses)
+        print()
+        print(angles)
 
-        graph_rot.pos = rot_pos
+        self.logger.experiment.log({"invariance_loss" : losses,
+                                     "angles" : angles,
+                                     "global_step": self.global_step})
 
-
-        out, out_pos, _, _ = self.network.grid_representation(graph)
-#         self.plot_grid(out[:,:1,:,:,:], name="f(x)")
-
-        out_rot, out_pos_rot, _, _ = self.network.grid_representation(graph_rot)
-        print(out_rot.shape)
-        print(out_pos_rot.shape)
-
-        self.plot_grid_3d(out_pos_rot, out_rot[0, 0, :,:,:].view(-1, 1))
-
-        self.plot_grid(out_rot[:,:1,:,:,:], name="f(t(x))")
-
-        quit()
-
-#         R_x, R_y, R_z = get_rotation_matrices(0, 0, -angle, graph.pos.device)
-#         inv_rot_pos = out_pos_rot @ R_x @ R_y @ R_z
-
-#         delta
-#         grid_res = self.network.grid_representation.grid_resolution
-#         out = torch.zeros(out_rot.shape, device=out_rot.device)
-#         out[0, :, grid_res//2-1, grid_res//2-1, grid_res//2-1] = 1.0
-#         self.plot_grid(out, name="f(x)")
-
-
-#         out_pos = out_pos_rot @ R_z.T @ R_y.T @ R_x.T
-
-
-#         inv_rot_pos /= 9.9339
-#
-#
-#
-#         inv_rot_pos = inv_rot_pos.reshape(1,
-#                                           grid_res,
-#                                           grid_res,
-#                                           grid_res,
-#                                           -1)
-
-#         out = torch.rot90(out_rot, k=1, dims=[0, 0, 1, 0, 0])
-#         out = torch.nn.functional.grid_sample(out[:,:1,:,:,:], inv_rot_pos, mode="nearest", align_corners=True, padding_mode="reflection")
-#         out = torch.nn.functional.grid_sample(out_rot, inv_rot_pos, mode="nearest")
-
-        out_rot = self.rotate_3d(out_rot, -angle * 180 / np.pi)
-
-        self.plot_grid(out_rot, name="t-1(f(t(x)))")
-        quit()
-#
-#         eq_error = ((out - out_rot) ** 2).sum() / (out_rot ** 2).sum()
-#
-#         self.logger.experiment.log(
-#                 {
-#                     "val/equivariance_loss": eq_error,
-#                     "global_step": self.global_step,
-#                 }
-#             )
-    def rotate_3d(self, imgs, angle, axis="z"):
-        height = imgs.shape[2]
-
-        img_list = []
-        for h in range(height):
-            out = torchvision.transforms.functional.rotate(imgs[:,:1, h, :,:], angle=angle)
-            img_list.append(out.unsqueeze(2))
-
-
-        return torch.cat(img_list, dim=2)
-
-
-
-
-    def plot_object(self, f, pos):
-
-        n_nodes = pos.shape[0]
-        i = 0
-        pos = pos.detach().cpu().numpy()
-#         f = f[:, 0].detach().cpu().numpy()
-        f = f.detach().cpu().numpy()
-
-        x = pos[:, 0]
-        y = pos[:, 1]
-        z = pos[:, 2]
-
-        layout = go.Layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            title='',
-            scene=dict(
-                xaxis=dict(
-                    title="",
-                    showbackground=False,
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=True
-                ),
-                yaxis=dict(
-                    title="",
-                    showbackground=False,
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=True
-                ),
-                zaxis=dict(
-                    title="",
-                    showbackground=False,
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=True
-                )
-            ),
-            showlegend=False,
-        )
-
-        fig = go.Figure(data=[go.Scatter3d(x=x,
-                                           y=y,
-                                           z=z,
-                                           mode='markers',
-                                           marker=dict(size=5,
-                                                       color=f,  # set color to an array/list of desired values
-                                                       colorscale='rainbow',  # choose a colorscale
-                                                       cmax=100,
-                                                       cmin=100,
-                                                       opacity=0.8)
-                                           )],
-                        layout=layout)
-
-        fig.show()
-
-    def plot_grid_3d(self, positions, features):
-        positions = positions.detach().cpu().numpy()
-        features = features.detach().cpu().numpy()
-        fig = plt.figure()
-        ax = plt.axes(projection='3d')
-
-        xdata, ydata, zdata = positions[:, 0], positions[:, 1], positions[:, 2]
-        ax.scatter3D(xdata, ydata, zdata, c=features, s=20)
-        fig.show()
-
-    def plot_grid(self, grid_rep, name="post_conv_repr", channels=3):
-        import torchvision
-        import matplotlib.pyplot as plt
-
-
-        def tile_images(images):
-            """
-            Tile and display images next to each other using Matplotlib.
-
-            Parameters:
-            images (list): A list of image arrays (NumPy arrays).
-
-            Example usage:
-            image_array1 = np.random.rand(100, 100, 3)  # Replace with your image arrays
-            image_array2 = np.random.rand(100, 100, 3)
-            image_array3 = np.random.rand(100, 100, 3)
-            images = [image_array1, image_array2, image_array3]
-            tile_images(images)
-            """
-            n = len(images)
-            fig, axs = plt.subplots(1, n, figsize=(12, 4))  # You can adjust the figsize as needed
-
-            for i, image_array in enumerate(images):
-                minn = image_array.min()
-                maxx = image_array.max()
-                normed_img = (image_array - minn) / (maxx - minn)
-                axs[i].imshow(normed_img)
-                axs[i].axis('off')
-
-            plt.tight_layout()
-
-            self.logger.experiment.log({name:wandb.Image(fig)})
-#             plt.close()
-
-        grid_rep = grid_rep[0, :channels, :, :, :].detach().cpu().numpy()
-
-        d_slice = grid_rep.shape[1]
-        ims = []
-        for d in range(d_slice):
-            imslice = grid_rep[:, d, :, :].transpose(1, 2, 0)
-            ims.append(imslice)
-
-        tile_images(ims)
-
-        plt.show()
-
-#         return fig
-
-#     def test_step(self, batch, batch_idx):
-#         # Perform step
-#         predictions, loss = self._step(batch, self.test_mse, time_inference=False)
-#         # Log and return loss (Required in training step)
-#         self.log(
-#             "test/loss",
-#             loss,
-#             on_step=False,
-#             on_epoch=True,
-#             prog_bar=True,
-#             sync_dist=self.distributed,
-#             batch_size=self.batch_size,
-#         )
-#         self.log(
-#             "test/mse",
-#             self.test_mse,
-#             on_step=False,
-#             on_epoch=True,
-#             prog_bar=True,
-#             sync_dist=self.distributed,
-#             batch_size=self.batch_size,
-#         )
 
 
 
@@ -987,16 +767,16 @@ class MD17Wrapper(LightningWrapperBase):
         super().__init__(network=network, cfg=cfg)
         # Metric computers
         self.force_weight = 1000
-        self.shift = -17591926.0
+        self.shift = -17591896.0
         self.scale = 2351.177978515625
 
         self.energy_train_metric = torchmetrics.MeanAbsoluteError()
-        self.energy_val_metric = torchmetrics.MeanAbsoluteError()
+        self.energy_valid_metric = torchmetrics.MeanAbsoluteError()
         self.energy_test_metric = torchmetrics.MeanAbsoluteError()
         self.force_train_metric = torchmetrics.MeanAbsoluteError()
-        self.force_val_metric = torchmetrics.MeanAbsoluteError()
+        self.force_valid_metric = torchmetrics.MeanAbsoluteError()
         self.force_test_metric = torchmetrics.MeanAbsoluteError()
-        self.loss_metric = torch.nn.MSELoss()
+
 
         self.batch_size = cfg.train.batch_size
 
@@ -1024,58 +804,9 @@ class MD17Wrapper(LightningWrapperBase):
     def energy_and_force_loss(self, graph, energy, force):
 
         loss = F.mse_loss(energy, (graph.energy - self.shift) / self.scale)
-        loss = loss + self.force_weight * F.mse_loss(force, graph.force / self.scale)
+        loss += self.force_weight * F.mse_loss(force, graph.force / self.scale)
         return loss
 
-    def equivariance_loss(self, graph):
-
-
-        angle = np.random.uniform(0, 2*np.pi, 3)
-        R_x = torch.tensor([[1.0, 0.0, 0.0],
-                            [0.0, np.cos(angle[0]), -np.sin(angle[0])],
-                            [0.0, np.sin(angle[0]),  np.cos(angle[0])]], dtype=torch.float32, device=graph.pos.device)
-
-        R_y = torch.tensor([[np.cos(angle[1]), 0.0, np.sin(angle[1])],
-                            [0.0, 1.0, 0.0],
-                            [-np.sin(angle[1]), 0.0, np.cos(angle[1])]], dtype=torch.float32, device=graph.pos.device)
-
-        R_z = torch.tensor([[np.cos(angle[2]), -np.sin(angle[2]), 0.0],
-                            [np.sin(angle[2]),  np.cos(angle[2]), 0.0],
-                            [0.0, 0.0, 1.0]], dtype=torch.float32, device=graph.pos.device)
-
-        rot_pos = graph.pos @ R_x @ R_y @ R_z
-
-        graph_rot = graph.clone()
-
-        graph_rot.pos = rot_pos
-#
-#         self.plot_object(graph.x, graph.pos)
-#         self.plot_object(graph.x, rot_pos)
-
-
-        out, out_pos, _, _ = self.network.grid_representation(graph)
-#         self.plot_grid(out)
-#         out_rot, out_pos_rot, _, _ = self.network.grid_representation(graph_rot)
-#
-        out_pos = out_pos @ R_x @ R_y @ R_z
-        grid_res = self.network.grid_representation.grid_resolution
-        out_pos = out_pos.reshape(1,
-                                   grid_res,
-                                   grid_res,
-                                   grid_res,
-                                   -1).permute(0, 4, 1, 2, 3).to(memory_format=torch.contiguous_format)
-
-        out = torch.nn.functional.grid_sample(out, out_pos)
-
-
-        eq_error = ((out - out_rot) ** 2).sum() / (out_rot ** 2).sum()
-
-        self.logger.experiment.log(
-                {
-                    "val/equivariance_loss": eq_error,
-                    "global_step": self.global_step,
-                }
-            )
 
 
     def _step(self, batch, loss_calculator, energy_metric, force_metric, time_inference=False, visualize=False):
@@ -1085,8 +816,6 @@ class MD17Wrapper(LightningWrapperBase):
             logger = self.logger.experiment
         else:
             logger = None
-
-#         pred = self.network(x, logger=logger)
 
         energy, force = self.pred_energy_and_force(x, logger=logger)
 
@@ -1100,229 +829,82 @@ class MD17Wrapper(LightningWrapperBase):
 
     def training_step(self, batch, batch_idx):
         # Perform step
+        x = batch
+        visualize = False
+        if visualize:
+            logger = self.logger.experiment
+        else:
+            logger = None
 
-        loss = self._step(batch, self.energy_and_force_loss, self.energy_train_metric, self.force_train_metric, time_inference=False)
-        # Log and return loss (Required in training step)
-        self.log(
-            "train/loss",
-            loss,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
-        self.log(
-            "train/energy_mae",
-            self.energy_train_metric,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
+        energy, force = self.pred_energy_and_force(x, logger=logger)
 
-        self.log(
-            "train/force_mae",
-            self.force_train_metric,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
+        loss = self.energy_and_force_loss(x, energy, force)
+
+        self.energy_train_metric(energy * self.scale + self.shift, x.energy)
+        self.force_train_metric(force * self.scale, x.force)
+
         return loss
 
     @torch.inference_mode(False)
     def validation_step(self, batch, batch_idx):
         # Perform step
+
+        x = batch
+        visualize = False
+        if batch_idx == 0:
+            if not "MPNN" in str(type(self.network)):
+                out, out_pos, _, _ = self.network.grid_representation(batch)
+                plot_grid(out, self.logger.experiment)
+                visualize = True
+
+
+        if visualize:
+            logger = self.logger.experiment
+        else:
+            logger = None
+
+
+
+        energy, force = self.pred_energy_and_force(x, logger=logger)
+
+        self.energy_valid_metric(energy * self.scale + self.shift, x.energy)
+        self.force_valid_metric(force * self.scale, x.force)
+
+
+    @torch.inference_mode(False)
+    def test_step(self, batch, batch_idx):
+        x = batch
         visualize = False
         if batch_idx == 0:
 #             self.equivariance_loss(batch[0])
             if not "MPNN" in str(type(self.network)):
                 out, out_pos, _, _ = self.network.grid_representation(batch)
-                self.plot_grid(out)
+                plot_grid(out, self.logger.experiment)
                 visualize = True
-#         out, pos, _, _ = self.network.grid_representation(batch)
 
-        loss = self._step(batch, self.energy_and_force_loss, self.energy_val_metric, self.force_val_metric, time_inference=False, visualize=visualize)
-        # Log and return loss (Required in training step)
-        self.log(
-            "val/loss",
-            loss,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
-        self.log(
-            "val/energy_mae",
-            self.energy_val_metric,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
 
-        self.log(
-            "val/force_mae",
-            self.force_val_metric,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
-        return loss
+        if visualize:
+            logger = self.logger.experiment
+        else:
+            logger = None
 
-    @torch.inference_mode(False)
-    def test_step(self, batch, batch_idx):
-        # Perform step
-        loss = self._step(batch, self.energy_and_force_loss, self.energy_test_metric, self.force_test_metric, time_inference=False)
-        # Log and return loss (Required in training step)
-        self.log(
-            "test/loss",
-            loss,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
-        self.log(
-            "test/energy_mae",
-            self.energy_test_metric,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
 
-        self.log(
-            "test/force_mae",
-            self.force_test_metric,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=self.distributed,
-            batch_size=self.batch_size,
-        )
-        return loss
+        energy, force = self.pred_energy_and_force(x, logger=logger)
+
+        self.energy_test_metric(energy * self.scale + self.shift, x.energy)
+        self.force_test_metric(force * self.scale, x.force)
+
 
     def on_train_epoch_end(self):
-        # Log best accuracy
-        train_loss = self.trainer.callback_metrics["train/loss_epoch"]
-        if train_loss < self.best_train_loss:
-            self.best_train_loss = train_loss.item()
-            self.logger.experiment.log(
-                {
-                    "train/best_loss": self.best_train_loss,
-                    "global_step": self.global_step,
-                }
-            )
+
+        self.log("Energy train MAE", self.energy_train_metric, prog_bar=True)
+        self.log("Force train MAE", self.force_train_metric, prog_bar=True)
+
+    def on_test_epoch_end(self):
+        self.log("Energy test MAE", self.energy_test_metric, prog_bar=True)
+        self.log("Force test MAE", self.force_test_metric, prog_bar=True)
 
     def on_validation_epoch_end(self):
-        # Log best accuracy
-        val_loss = self.trainer.callback_metrics["val/loss"]
-        if val_loss < self.best_val_loss:
-            self.best_val_loss = val_loss.item()
-            self.logger.experiment.log(
-                {
-                    "val/best_acc": self.best_val_loss,
-                    "global_step": self.global_step,
-                }
-            )
+        self.log("Energy valid MAE", self.energy_valid_metric, prog_bar=True)
+        self.log("Force valid MAE", self.force_valid_metric, prog_bar=True)
 
-    def plot_object(self, f, pos):
-
-        n_nodes = pos.shape[0]
-        i = 0
-        pos = pos.detach().cpu().numpy()
-#         f = f[:, 0].detach().cpu().numpy()
-        f = f.detach().cpu().numpy()
-
-        x = pos[:, 0]
-        y = pos[:, 1]
-        z = pos[:, 2]
-
-        layout = go.Layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            title='',
-            scene=dict(
-                xaxis=dict(
-                    title="",
-                    showbackground=False,
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=True
-                ),
-                yaxis=dict(
-                    title="",
-                    showbackground=False,
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=True
-                ),
-                zaxis=dict(
-                    title="",
-                    showbackground=False,
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=True
-                )
-            ),
-            showlegend=False,
-        )
-
-        fig = go.Figure(data=[go.Scatter3d(x=x,
-                                           y=y,
-                                           z=z,
-                                           mode='markers',
-                                           marker=dict(size=5,
-                                                       color=f,  # set color to an array/list of desired values
-                                                       colorscale='rainbow',  # choose a colorscale
-                                                       cmax=100,
-                                                       cmin=100,
-                                                       opacity=0.8)
-                                           )],
-                        layout=layout)
-
-        fig.show()
-
-    def plot_grid(self, grid_rep):
-        import torchvision
-        import matplotlib.pyplot as plt
-
-        def tile_images(images):
-            """
-            Tile and display images next to each other using Matplotlib.
-
-            Parameters:
-            images (list): A list of image arrays (NumPy arrays).
-
-            Example usage:
-            image_array1 = np.random.rand(100, 100, 3)  # Replace with your image arrays
-            image_array2 = np.random.rand(100, 100, 3)
-            image_array3 = np.random.rand(100, 100, 3)
-            images = [image_array1, image_array2, image_array3]
-            tile_images(images)
-            """
-            n = len(images)
-            fig, axs = plt.subplots(1, n, figsize=(12, 4))  # You can adjust the figsize as needed
-
-            for i, image_array in enumerate(images):
-                minn = image_array.min()
-                maxx = image_array.max()
-                normed_img = (image_array - minn) / (maxx - minn)
-                axs[i].imshow(normed_img)
-                axs[i].axis('off')
-
-            plt.tight_layout()
-
-            self.logger.experiment.log({"grid_repr_post_conv":wandb.Image(fig)})
-#             plt.close()
-
-        grid_rep = grid_rep[0, :3, :, :, :].detach().cpu().numpy()
-
-        d_slice = grid_rep.shape[1]
-        ims = []
-        for d in range(d_slice):
-            imslice = grid_rep[:, d, :, :].transpose(1, 2, 0)
-            ims.append(imslice)
-
-        tile_images(ims)

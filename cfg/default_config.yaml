@@ -9,6 +9,7 @@ seed: 0
 comment: ""
 task: ""
 track_inference_time: False
+limit_samples: False
 
 # network
 net:
@@ -17,7 +18,6 @@ net:
   num_blocks: -1
   readout_pool: "mean"
   readout_head: True
-  flatten_output: False
   dropout: 0.0
   dropout_type: Dropout
   norm: ""
@@ -27,10 +27,27 @@ net:
   block:
     type: default
     prenorm: True
+    use_bias: True
+    layer_scale_init_value: 0.0
+    bottleneck_factor: -1
+    drop_path: 0.0
+  kernel:
+    type: ""
+    isotropic: False
+    num_hidden: -1
+    num_layers: -1
+    omega_0: 0.0
+    input_scale: 0.0
+    use_bias: True
+    size: -1
+    norm: Identity
+    nonlinearity: Identity
+    sigma: 0.0
 # gridifier
 gridifier:
   connectivity: ""
   grid_resolution: -1
+  circular_grid: False
   num_neighbors: -1
   num_backward_neighbors: -1
   segmentation_backward_edges: False
@@ -79,24 +96,8 @@ gridifier:
     size: -1
     norm: Identity
     nonlinearity: Identity
-# convolutions
-gconv:
-  group_kernel_size: -1
 
-conv:
-  type: ""
-  use_bias: True
-  out_dim: -1
-  kernel:
-    type: ""
-    num_hidden: -1
-    num_layers: -1
-    omega_0: 0.0
-    input_scale: 0.0
-    use_bias: True
-    size: -1
-    norm: Identity
-    nonlinearity: Identity
+
 pointnet:
   connectivity: ""
   num_neighbors: -1
@@ -114,7 +115,6 @@ dataset:
     num_samples: -1
     balance_data: False
     predict: ""
-    normalization: ""
   qm9:
     use_cormorant: False
   md17:

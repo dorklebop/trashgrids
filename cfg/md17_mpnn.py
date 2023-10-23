@@ -9,11 +9,10 @@ def get_config():
     cfg.task = "regression"
     cfg.net.type = "MPNN"
     # dataset
-    cfg.dataset.augment = True
+    cfg.dataset.augment = False
     cfg.dataset.name = "MD17"
     cfg.dataset.params.num_classes = 1
     cfg.dataset.params.use_positions = False
-    cfg.dataset.params.normalization = ""
     cfg.dataset.md17.embed_features = True
     cfg.dataset.md17.add_edges = True
 
@@ -69,10 +68,10 @@ def get_config():
     cfg.conv.kernel.size = 5
 
     cfg.optimizer.lr = 0.0003
-    cfg.optimizer.type = "AdamW"
+    cfg.optimizer.type = "Adam"
     cfg.optimizer.weight_decay = 0.0
     cfg.scheduler.type = "cosine"
-    cfg.scheduler.warmup_epochs = 10
+    cfg.scheduler.warmup_epochs = 0
     cfg.scheduler.mode = "min"
     cfg.seed = 42
     cfg.train.batch_size = 5

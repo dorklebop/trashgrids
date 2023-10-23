@@ -23,6 +23,7 @@ class QM9DataModule(pl.LightningDataModule):
         num_workers: int,
         pin_memory: bool,
         target="alpha",
+        limit_samples=False,
         **kwargs,
     ):
         super().__init__()
@@ -34,6 +35,8 @@ class QM9DataModule(pl.LightningDataModule):
         num_samples = cfg.params.num_samples
         val_split_as_test_split = cfg.params.val_split_as_test_split
 
+
+        self.limit_samples = limit_samples
 
         # Save parameters to self
         self.data_dir = data_dir + f"/QM9_alpha"
@@ -82,8 +85,11 @@ class QM9DataModule(pl.LightningDataModule):
         self.targets = ['mu', 'alpha', 'homo', 'lumo', 'gap', 'r2', 'zpve', 'U0', 'U', 'H', 'G', 'Cv', 'U0_atom', 'U_atom', 'H_atom', 'G_atom', 'A', 'B', 'C']
 
     def prepare_data(self):
+        cutoff = None
+        if self.limit_samples:
+            cutoff = 100
         if not self.augment:
-            dataset = QM9(root=self.data_dir, transform=self.train_transform, pre_transform=None)
+            dataset = QM9(root=self.data_dir, transform=self.train_transform, pre_transform=None)[:cutoff]
             index = self.targets.index(self.target)
             self.dataset = [prep_data(graph, index, self.target, self.qm9_to_ev, self.cormorant) for graph in tqdm(dataset, desc='Preparing data')]
 
@@ -103,8 +109,8 @@ class QM9DataModule(pl.LightningDataModule):
 
 
         else:
-            dataset_train = QM9(root=self.data_dir, transform=self.train_transform, pre_transform=None)
-            dataset_test = QM9(root=self.data_dir, transform=self.test_transform, pre_transform=None)
+            dataset_train = QM9(root=self.data_dir, transform=self.train_transform, pre_transform=None)[:cutoff]
+            dataset_test = QM9(root=self.data_dir, transform=self.test_transform, pre_transform=None)[:cutoff]
             index = self.targets.index(self.target)
             self.dataset_train = [prep_data(graph, index, self.target, self.qm9_to_ev, self.cormorant) for graph in tqdm(dataset_train, desc='Preparing train data')]
             self.dataset_test = [prep_data(graph, index, self.target, self.qm9_to_ev, self.cormorant) for graph in tqdm(dataset_test, desc='Preparing test data')]
@@ -124,6 +130,8 @@ class QM9DataModule(pl.LightningDataModule):
 
             self.test_dataset = self.dataset_test[n_train:n_test]
 
+        if self.limit_samples:
+            self.val_dataset = self.test_dataset = self.train_dataset
 
     def setup(self, stage=None):
         # Assign train/val datasets for use in dataloaders

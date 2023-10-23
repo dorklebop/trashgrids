@@ -1,0 +1,85 @@
+method: grid
+metric:
+  goal: minimize
+  name: 'val/best_mae'
+name: qm9_isotropic_neighs_gridres
+project: gridifier2
+parameters:
+  cfg:
+    value: cfg/qm9_upscale.py
+  cfg.gridifier.grid_resolution:
+    values:
+      - 16
+      - 9
+  cfg.gridifier.num_neighbors:
+    values:
+      - 16
+      - 9
+  cfg.gridifier.message_net.type:
+    values:
+      - "MLP"
+  cfg.gridifier.message_net.num_hidden:
+    values:
+      - 256
+  cfg.gridifier.message_net.num_layers:
+    values:
+      - 2
+  cfg.gridifier.node_embedding.num_layers:
+    values:
+      - 2
+  cfg.gridifier.node_embedding.type:
+    value: "MLP"
+  cfg.gridifier.node_embedding.num_hidden:
+    values:
+      - 256
+  cfg.gridifier.update_net.num_layers:
+    values:
+      - 2
+  cfg.gridifier.update_net.type:
+    values:
+      - "MLP"
+  cfg.gridifier.update_net.num_hidden:
+    values:
+      - 256
+  cfg.gridifier.position_embed.num_layers:
+    values:
+      - 2
+  cfg.gridifier.position_embed.num_hidden:
+    values:
+      - 256
+  cfg.gridifier.position_embed.omega_0:
+    values:
+      - 1.0
+  cfg.net.norm:
+    value: "Identity"
+  cfg.net.num_hidden:
+    values:
+      - 256
+  cfg.net.num_blocks:
+    values:
+      - 12
+      - 10
+  cfg.net.pooling_layers:
+    value: "(-1,)"
+  cfg.train.epochs:
+    value: 150
+  cfg.gridifier.aggregation:
+    value: "mean"
+  cfg.dataset.augment:
+    value: True
+  cfg.optimizer.weight_decay:
+    value: 0
+  cfg.gridifier.conditioning:
+    value: "distance"
+  cfg.dataset.qm9.use_cormorant:
+    values:
+      - True
+  cfg.conv.type:
+    value: "IsotropicConv3d"
+  cfg.conv.out_dim:
+    values:
+      - 128
+  cfg.conv.kernel.size:
+    values:
+      - 7
+program: main.py
